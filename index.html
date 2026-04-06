@@ -264,7 +264,7 @@
   .elim-title { font-size: 24px; font-weight: 500; color: var(--danger); margin-bottom: 6px; }
   .elim-sub   { font-size: 14px; color: var(--muted); margin-bottom: 22px; }
 
-  .sign-out-btn { color: rgba(255,255,255,0.65); border-color: rgba(255,255,255,0.25); font-size: 13px; padding: 6px 14px; }
+  .sign-out-btn { color: rgba(255,255,255,0.85); border-color: rgba(255,255,255,0.25); font-size: 13px; padding: 6px 14px; background: transparent; }
   .sign-out-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
   .add-row { display: flex; gap: 8px; margin-top: 12px; }
   .add-row input { flex: 1; }
@@ -580,8 +580,30 @@ function renderLoading() {
 function renderLogin() {
   return `
     <div class="login-wrap"><div class="login-card">
-      <div class="login-logo">CA</div>
-      <div class="login-title">Spoon Game</div>
+      <div <div style="display:flex;justify-content:center;margin-bottom:6px;">
+          <svg width="48" height="120" viewBox="0 0 54 130" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <!-- Single continuous spoon shape: bowl + neck + handle as one path -->
+            <path d="
+              M27 2
+              C14 2 7 11 7 22
+              C7 33 14 44 22 47
+              Q24 48 24 52
+              L23 115
+              Q23 120 27 120
+              Q31 120 31 115
+              L30 52
+              Q30 48 32 47
+              C40 44 47 33 47 22
+              C47 11 40 2 27 2
+              Z
+            " fill="#FFCE02" stroke="#c9a800" stroke-width="1.5" stroke-linejoin="round"/>
+            <!-- Bowl highlight -->
+            <ellipse cx="22" cy="20" rx="8" ry="9" fill="#ffe566" opacity="0.45"/>
+            <!-- Handle shine -->
+            <rect x="25" y="58" width="3" height="48" rx="1.5" fill="#ffe566" opacity="0.4"/>
+          </svg>
+        </div>
+        <div class="login-title">Spoon Game</div>
       <div class="login-sub">Cary Academy · Class of 2025</div>
       <div class="mode-tabs">
         <div class="mode-tab ${STATE.loginMode==='player'?'active':''}" onclick="STATE.loginMode='player';render()">Player</div>

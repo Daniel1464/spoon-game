@@ -506,7 +506,7 @@ async function handlePlayerLogin() {
   if (btn) btn.disabled = true;
   const { data, error } = await sb
     .from('players')
-    .select('id, name, code, target_id, kills, active')
+    .select('id, name, code, target_id, eliminations, active')
     .eq('code', STATE.loginCode.trim().toUpperCase())
     .single();
   if (error || !data) {
@@ -604,7 +604,7 @@ function renderPublicBoard() {
             <li><span class="rule-num">6.</span><span>The real world is <strong>not</strong> a safe zone. Park West Village, The Arboretum, your dinner table — bring your spoon. <em>Do not trust anyone.</em></span></li>
             <li><span class="rule-num">7.</span><span>No chasing. No running. This is a game of cunning and surprise — stride with confidence and purpose.</span></li>
             <li><span class="rule-num">8.</span><span>The more elaborate the spooning, the better. <em>#designthinking</em></span></li>
-            <li><span class="rule-num">9.</span><span>Upon elimination, give your target assignment to your eliminator and report to Mr. Shepherd via email or Teams.</span></li>
+            <li><span class="rule-num">9.</span><span>Upon elimination, give your elimination code to your eliminator.</span></li>
             <li><span class="rule-num">10.</span><span>The <span class="sggb-badge" style="font-size:10px;">SGGB</span> reserves the right to introduce... complications. Watch out for forks.</span></li>
           </ul>
         </div>
@@ -762,11 +762,11 @@ function renderPlayer() {
           </div>
         `}
         <div class="card">
-          <div class="card-label">Your kill code — give this to whoever eliminates you</div>
+          <div class="card-label">Your elimination code — give this to whoever eliminates you</div>
           <div class="code-display">${p.code}</div>
         </div>
         <div class="card">
-          <div class="card-label">Enter your target's kill code</div>
+          <div class="card-label">Enter your target's elimination code</div>
           <div class="input-row">
             <input type="text" class="mono" maxlength="6" placeholder="XXXXXX"
               value="${STATE.killCodeInput}" oninput="STATE.killCodeInput=this.value.toUpperCase()"
@@ -774,7 +774,7 @@ function renderPlayer() {
               onkeydown="if(event.key==='Enter')submitKillCode(STATE.killCodeInput)">
             <button class="btn primary" onclick="submitKillCode(STATE.killCodeInput)">Submit</button>
           </div>
-          <div style="font-size:12px;color:var(--muted);">Enter the 6-character code your target gives you after you catch them without their spoon.</div>
+          <div style="font-size:12px;color:var(--muted);">Enter the 6-character elimination code your target gives you after you catch them without their spoon.</div>
         </div>
       `}
       <div style="text-align:center;margin-top:8px;">
@@ -785,7 +785,7 @@ function renderPlayer() {
 
 async function refreshPlayerView() {
   const [{ data: p }, { data: gs }, { data: players }] = await Promise.all([
-    sb.from('players').select('id, name, code, target_id, kills, active').eq('id', STATE.currentPlayer.id).single(),
+    sb.from('players').select('id, name, code, target_id, eliminations, active').eq('id', STATE.currentPlayer.id).single(),
     sb.from('game_state').select('status').eq('id',1).single(),
     sb.from('players').select('id, name, active').order('name'),
   ]);
@@ -837,7 +837,7 @@ function renderAdminPlayers(topKiller, elim) {
       <div class="card-label">Players</div>
       <div class="col-header">
         <span class="pn">Name</span><span class="pt">Target</span>
-        <span class="pc">Code</span><span class="pk">Kills</span>
+        <span class="pc">Code</span><span class="pk">Eliminations</span>
         <span class="ps">Status</span><span class="pa">Actions</span>
       </div>
       ${STATE.players.map(p => {

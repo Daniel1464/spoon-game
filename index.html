@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Spoon Game — Cary Academy</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 54 130'%3E%3Cpath d='M27 2 C14 2 7 11 7 22 C7 33 14 44 22 47 Q24 48 24 52 L23 115 Q23 120 27 120 Q31 120 31 115 L30 52 Q30 48 32 47 C40 44 47 33 47 22 C47 11 40 2 27 2 Z' fill='%23FFCE02' stroke='%23c9a800' stroke-width='1.5'/%3E%3C/svg%3E">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
@@ -276,6 +277,23 @@
     .login-card { padding: 28px 22px; }
     .admin-tabs { display: none; }
   }
+  /* ── PUBLIC BOARD ── */
+  .public-board { max-width: 860px; margin: 0 auto; padding: 22px 18px 0; }
+  .board-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 0; }
+  @media (max-width: 640px) { .board-grid { grid-template-columns: 1fr; } }
+  .elim-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .elim-row:last-child { border-bottom: none; }
+  .elim-victim { font-weight: 500; color: var(--danger); flex: 1; }
+  .elim-by { color: var(--muted); font-size: 12px; }
+  .elim-killer { font-weight: 500; color: var(--ca-dark); }
+  .elim-empty { text-align: center; padding: 16px; font-size: 13px; color: var(--muted); font-style: italic; }
+  .rules-list { list-style: none; padding: 0; }
+  .rules-list li { padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 13px; line-height: 1.6; color: var(--text); display: flex; gap: 10px; }
+  .rules-list li:last-child { border-bottom: none; }
+  .rule-num { font-weight: 600; color: var(--ca-dark); flex-shrink: 0; font-size: 12px; margin-top: 2px; }
+  .board-tagline { font-size: 13px; color: var(--muted); font-style: italic; margin-bottom: 14px; line-height: 1.6; }
+  .sggb-badge { display: inline-block; background: var(--ca-yellow); color: var(--ca-dark); font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; letter-spacing: 0.04em; }
+
   @media print {
     .header, .no-print { display: none !important; }
     .print-grid { grid-template-columns: repeat(2, 1fr); }
@@ -308,6 +326,7 @@ let STATE = {
   adminTab: 'players',
   adminNewName: '',
   forkInputName: '',
+  eliminations: [],
 };
 
 // ── CRYPTO: hash password in the browser using SubtleCrypto ──
@@ -383,9 +402,11 @@ async function eliminatePlayer(id) {
   const ops = [sb.from('players').update({ active: false }).eq('id', id)];
   if (killer) {
     ops.push(sb.from('players').update({ kills: killer.kills + 1, target_id: victim.target_id }).eq('id', killer.id));
+    ops.push(sb.from('eliminations').insert({ victim_id: id, victim_name: victim.name, killer_id: killer.id, killer_name: killer.name }));
   }
   await Promise.all(ops);
   await loadAll();
+  await loadEliminations();
   if (STATE.currentPlayer?.id === killer?.id) {
     STATE.currentPlayer = STATE.players.find(p => p.id === killer.id);
   }
@@ -544,6 +565,53 @@ function doSignOut() {
   render();
 }
 
+// ── PUBLIC BOARD ──
+async function loadEliminations() {
+  const { data } = await sb.from('eliminations').select('*').order('created_at', { ascending: false });
+  STATE.eliminations = data || [];
+}
+
+function renderPublicBoard() {
+  return `
+    <div class="public-board">
+      <div style="text-align:center;margin-bottom:18px;">
+        <div style="font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);margin-bottom:4px;">Presented by the</div>
+        <span class="sggb-badge">Spoon Game Governing Body</span>
+        <div style="font-size:22px;font-weight:500;color:var(--ca-dark);margin:8px 0 4px;">Senior Spoon Game 2025</div>
+        <div class="board-tagline">"A game only for the well-mannered and polite.<br>No tomfoolery. No hoodwinkery. Absolutely no shenanigans."</div>
+      </div>
+      <div class="board-grid">
+        <div class="card">
+          <div class="card-label">Eliminations log</div>
+          ${STATE.eliminations.length === 0
+            ? '<div class="elim-empty">No eliminations yet — the game has just begun.</div>'
+            : STATE.eliminations.map(e => `
+              <div class="elim-row">
+                <span class="elim-victim">${e.victim_name}</span>
+                <span class="elim-by">spooned by</span>
+                <span class="elim-killer">${e.killer_name}</span>
+              </div>
+            `).join('')}
+        </div>
+        <div class="card">
+          <div class="card-label">Official rules of play</div>
+          <ul class="rules-list">
+            <li><span class="rule-num">1.</span><span>Above all else: this is a game for the well-mannered and polite. No tomfoolery, hoodwinkery, or — worst of all — shenanigans.</span></li>
+            <li><span class="rule-num">2.</span><span>The game starts at <strong>noon on Wednesday, April 16th</strong>. Target assignments distributed that morning.</span></li>
+            <li><span class="rule-num">3.</span><span>Eliminate your target by touching them with your spoon <em>outside a safe zone</em> and saying <strong>"You've been spooned, friend."</strong></span></li>
+            <li><span class="rule-num">4.</span><span>No elimination if your target's spoon is <em>literally in hand</em>. Not attached to the wrist — in hand.</span></li>
+            <li><span class="rule-num">5.</span><span>Safe zones: classrooms during class, bathrooms, safety drills, sports practice/games, and any moving motorized vehicle.</span></li>
+            <li><span class="rule-num">6.</span><span>The real world is <strong>not</strong> a safe zone. Park West Village, The Arboretum, your dinner table — bring your spoon. <em>Do not trust anyone.</em></span></li>
+            <li><span class="rule-num">7.</span><span>No chasing. No running. This is a game of cunning and surprise — stride with confidence and purpose.</span></li>
+            <li><span class="rule-num">8.</span><span>The more elaborate the spooning, the better. <em>#designthinking</em></span></li>
+            <li><span class="rule-num">9.</span><span>Upon elimination, give your target assignment to your eliminator and report to Mr. Shepherd via email or Teams.</span></li>
+            <li><span class="rule-num">10.</span><span>The <span class="sggb-badge" style="font-size:10px;">SGGB</span> reserves the right to introduce... complications. Watch out for forks.</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>`;
+}
+
 // ── RENDER ──
 function render() {
   const app = document.getElementById('app');
@@ -579,6 +647,7 @@ function renderLoading() {
 
 function renderLogin() {
   return `
+    ${renderPublicBoard()}
     <div class="login-wrap"><div class="login-card">
       <div <div style="display:flex;justify-content:center;margin-bottom:6px;">
           <svg width="48" height="120" viewBox="0 0 54 130" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -918,7 +987,10 @@ function generateQRCodes() {
 (async () => {
   STATE.view = 'loading';
   render();
-  await new Promise(r => setTimeout(r, 300));
+  await Promise.all([
+    loadEliminations(),
+    new Promise(r => setTimeout(r, 300)),
+  ]);
   STATE.view = 'login';
   render();
 })();

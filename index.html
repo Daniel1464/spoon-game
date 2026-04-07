@@ -411,9 +411,9 @@ async function setGameStatus(status) {
 }
 
 function confirmEliminatePlayer(id, name) {
-  confirm(
+  showConfirm(
     'Manually eliminate player?',
-    \`<strong>\${name}</strong> will be marked as eliminated and their target will be passed to whoever was targeting them.\`,
+    `<strong>${name}</strong> will be marked as eliminated and their target will be passed to whoever was targeting them.`,
     'Eliminate', 'danger',
     () => eliminatePlayer(id)
   );
@@ -462,7 +462,7 @@ async function submitKillCode(code) {
 }
 
 function confirmReassignTargets() {
-  confirm(
+  showConfirm(
     'Reshuffle all targets?',
     'Every active player will be assigned a new random target. This cannot be undone.',
     'Reshuffle', 'yellow',
@@ -492,9 +492,9 @@ async function addPlayer() {
 }
 
 function confirmRemovePlayer(id, name) {
-  confirm(
+  showConfirm(
     'Remove player?',
-    \`<strong>\${name}</strong> will be permanently removed from the game. This cannot be undone.\`,
+    `<strong>${name}</strong> will be permanently removed from the game. This cannot be undone.`,
     'Remove', 'danger',
     () => removePlayer(id)
   );
@@ -511,9 +511,9 @@ async function removePlayer(id) {
 }
 
 function confirmResetCode(id, name) {
-  confirm(
+  showConfirm(
     'Reset access code?',
-    \`This will generate a new code for <strong>\${name}</strong>. Their old code will stop working immediately.\`,
+    `This will generate a new code for <strong>${name}</strong>. Their old code will stop working immediately.`,
     'Reset code', 'danger',
     () => resetCode(id)
   );
@@ -526,9 +526,9 @@ async function resetCode(id) {
 }
 
 function confirmRestorePlayer(id, name) {
-  confirm(
+  showConfirm(
     'Restore player?',
-    \`<strong>\${name}</strong> will be marked as active again. You may need to reassign their target manually.\`,
+    `<strong>${name}</strong> will be marked as active again. You may need to reassign their target manually.`,
     'Restore', 'primary',
     () => restorePlayer(id)
   );
@@ -679,7 +679,7 @@ function renderPublicBoard() {
 // ── CONFIRM DIALOG ──
 let pendingAction = null;
 
-function confirm(title, body, actionLabel, actionClass, onConfirm) {
+function showConfirm(title, body, actionLabel, actionClass, onConfirm) {
   pendingAction = onConfirm;
   const backdrop = document.createElement('div');
   backdrop.className = 'dialog-backdrop';

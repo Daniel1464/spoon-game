@@ -326,6 +326,7 @@ let STATE = {
   killCodeInput: '',
   adminTab: 'players',
   adminNewName: '',
+  adminNewEmail: '',
   forkInputName: '',
   eliminations: [],
 };
@@ -476,10 +477,17 @@ async function reassignTargets() {
 }
 
 async function addPlayer() {
-  const name = STATE.adminNewName.trim();
-  if (!name) return;
-  await sb.from('players').insert({ name, code: genCode(), kills: 0, active: true });
-  STATE.adminNewName = '';
+  const name  = STATE.adminNewName.trim();
+  const email = (STATE.adminNewEmail || '').trim().toLowerCase();
+  if (!name)  { showToast('Name is required'); return; }
+  if (!email) { showToast('Email is required'); return; }
+  if (!email.includes('@')) { showToast('Please enter a valid email'); return; }
+  if (STATE.players.find(p => p.email && p.email.toLowerCase() === email)) {
+    showToast('A player with that email already exists'); return;
+  }
+  await sb.from('players').insert({ name, email, code: genCode(), kills: 0, active: true });
+  STATE.adminNewName  = '';
+  STATE.adminNewEmail = '';
   await loadAll();
   showToast('Player added');
   render();
@@ -700,6 +708,95 @@ function confirmReassignTargets() {
   if (window.confirm('Reshuffle all targets?\nEvery active player will be assigned a new random target.')) {
     reassignTargets();
   }
+}
+
+// ── CSV EXPORT ──
+function exportCSV() {
+  const rows = [['Name', 'Email', 'Access Code', 'Status', 'Eliminations']];
+  STATE.players.forEach(p => {
+    rows.push([
+      p.name,
+      p.email || '',
+      p.code,
+      p.active ? 'Active' : 'Eliminated',
+      p.kills
+    ]);
+  });
+  const csv = rows.map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'spoon-game-players.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('CSV exported');
+}
+
+// ── CSV IMPORT ──
+function triggerImport() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.csv';
+  input.addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(ev) {
+      parseAndImportCSV(ev.target.result);
+    };
+    reader.readAsText(file);
+  });
+  input.click();
+}
+
+function parseAndImportCSV(text) {
+  const lines = text.trim().split('\n').map(l => l.trim()).filter(l => l);
+  if (lines.length < 2) { showToast('CSV appears empty'); return; }
+
+  // Detect header row
+  const header = lines[0].toLowerCase().replace(/"/g, '');
+  const cols = header.split(',').map(c => c.trim());
+  const nameIdx  = cols.findIndex(c => c.includes('name'));
+  const emailIdx = cols.findIndex(c => c.includes('email'));
+
+  if (nameIdx === -1) { showToast('CSV must have a Name column'); return; }
+
+  if (emailIdx === -1) { showToast('CSV must have an Email column'); return; }
+
+  const newPlayers = [];
+  const skipped = [];
+  for (let i = 1; i < lines.length; i++) {
+    const vals = lines[i].split(',').map(v => v.trim().replace(/^"|"$/g, ''));
+    const name  = vals[nameIdx]  || '';
+    const email = (vals[emailIdx] || '').trim().toLowerCase();
+    if (!name || !email) continue;
+    // Skip if email already exists
+    if (STATE.players.find(p => p.email && p.email.toLowerCase() === email)) {
+      skipped.push(name);
+      continue;
+    }
+    newPlayers.push({ name, email, code: genCode(), kills: 0, active: true });
+  }
+
+  if (newPlayers.length === 0) {
+    showToast('No new players found' + (skipped.length ? ' (' + skipped.length + ' already exist)' : ''));
+    return;
+  }
+
+  const skipMsg = skipped.length ? '\n\nSkipping ' + skipped.length + ' already existing: ' + skipped.join(', ') : '';
+  if (!window.confirm('Import ' + newPlayers.length + ' new players?' + skipMsg + '\n\n' + newPlayers.map(p => p.name + ' (' + p.email + ')').join('\n'))) return;
+
+  importPlayers(newPlayers);
+}
+
+async function importPlayers(players) {
+  showToast('Importing ' + players.length + ' players...');
+  const { error } = await sb.from('players').insert(players);
+  if (error) { showToast('Import error: ' + error.message); return; }
+  await loadAll();
+  showToast('Imported ' + players.length + ' players successfully');
+  render();
 }
 
 // ── RENDER ──
@@ -936,6 +1033,7 @@ function renderAdminPlayers(topKiller, elim) {
         const safeName = p.name.replace(/'/g, "\\'");
         return `<div class="player-row">
           <span class="pn">${p.name}</span>
+          <span style="flex:1.4;font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.email || '—'}</span>
           <span class="pt" style="flex:1.6;">
             <select style="font-size:12px;padding:4px 6px;max-width:140px;border-radius:6px;" onchange="assignTarget('${p.id}', this.value)">
               <option value="">${target ? target.name : '— none —'}</option>
@@ -956,9 +1054,16 @@ function renderAdminPlayers(topKiller, elim) {
       }).join('')}
       ${STATE.players.length === 0 ? `<div class="empty">No players yet. Add some below.</div>` : ''}
       <div class="add-row">
-        <input type="text" placeholder="New player name" value="${STATE.adminNewName}"
-          oninput="STATE.adminNewName=this.value" onkeydown="if(event.key==='Enter')addPlayer()">
+        <input type="text" placeholder="Name" value="${STATE.adminNewName}"
+          oninput="STATE.adminNewName=this.value" onkeydown="if(event.key==='Enter')addPlayer()" style="flex:1.2;">
+        <input type="text" placeholder="Email (required)" value="${STATE.adminNewEmail||''}"
+          oninput="STATE.adminNewEmail=this.value" onkeydown="if(event.key==='Enter')addPlayer()" style="flex:1.4;">
         <button class="btn primary" onclick="addPlayer()">Add player</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <button class="btn" onclick="triggerImport()">Import CSV</button>
+        <button class="btn" onclick="exportCSV()">Export CSV</button>
+        <div style="flex:1;font-size:12px;color:var(--muted);display:flex;align-items:center;">CSV must have Name and Email columns. Duplicates skipped by email.</div>
       </div>
     </div>`;
 }

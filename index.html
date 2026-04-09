@@ -528,9 +528,14 @@ function confirmResetCode(id, name) {
   );
 }
 async function resetCode(id) {
-  await sb.from('players').update({ code: genCode() }).eq('id', id);
+  console.log('resetCode called with id:', id);
+  const newCode = genCode();
+  console.log('Generated new code:', newCode);
+  const { data, error } = await sb.from('players').update({ code: newCode }).eq('id', id);
+  console.log('Supabase response:', data, error);
+  if (error) { showToast('Error: ' + error.message); return; }
   await loadAll();
-  showToast('Code reset');
+  showToast('Code reset to ' + newCode);
   render();
 }
 

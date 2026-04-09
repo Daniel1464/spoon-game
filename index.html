@@ -294,21 +294,6 @@
   .board-tagline { font-size: 13px; color: var(--muted); font-style: italic; margin-bottom: 14px; line-height: 1.6; }
   .sggb-badge { display: inline-block; background: var(--ca-yellow); color: var(--ca-dark); font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; letter-spacing: 0.04em; }
 
-  /* ── CONFIRM DIALOG ── */
-  .dialog-backdrop {
-    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-    background: rgba(0,0,0,0.45);
-    display: flex; align-items: center; justify-content: center;
-    z-index: 9999; padding: 20px;
-  }
-  .dialog {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 24px 26px;
-    width: 100%; max-width: 380px;
-  }
-  .dialog-title { font-size: 16px; font-weight: 500; color: var(--text); margin-bottom: 6px; }
-  .dialog-body  { font-size: 14px; color: var(--muted); margin-bottom: 22px; line-height: 1.6; }
-  .dialog-btns  { display: flex; gap: 8px; justify-content: flex-end; }
 
   @media print {
     .header, .no-print { display: none !important; }
@@ -691,38 +676,30 @@ function renderPublicBoard() {
 }
 
 // ── CONFIRM DIALOG ──
-let pendingAction = null;
-
-function showConfirm(title, body, actionLabel, actionClass, onConfirm) {
-  closeConfirm();
-  pendingAction = onConfirm;
-  const backdrop = document.createElement('div');
-  backdrop.className = 'dialog-backdrop';
-  backdrop.id = 'confirm-dialog';
-  backdrop.innerHTML = `
-    <div class="dialog">
-      <div class="dialog-title">${title}</div>
-      <div class="dialog-body">${body}</div>
-      <div class="dialog-btns">
-        <button class="btn" onclick="closeConfirm()">Cancel</button>
-        <button class="btn ${actionClass}" onclick="runConfirm()">${actionLabel}</button>
-      </div>
-    </div>`;
-  document.body.appendChild(backdrop);
-  backdrop.addEventListener('click', function(e) {
-    if (e.target === backdrop) closeConfirm();
-  });
+function confirmResetCode(id, name) {
+  if (window.confirm('Reset access code for ' + name + '?\nTheir old code will stop working immediately.')) {
+    resetCode(id);
+  }
 }
-
-function closeConfirm() {
-  const d = document.getElementById('confirm-dialog');
-  if (d) d.remove();
-  pendingAction = null;
+function confirmEliminatePlayer(id, name) {
+  if (window.confirm('Manually eliminate ' + name + '?\nTheir target will be passed on to whoever was targeting them.')) {
+    eliminatePlayer(id);
+  }
 }
-
-function runConfirm() {
-  closeConfirm();
-  if (pendingAction) pendingAction();
+function confirmRestorePlayer(id, name) {
+  if (window.confirm('Restore ' + name + ' to active?\nYou may need to reassign their target manually.')) {
+    restorePlayer(id);
+  }
+}
+function confirmRemovePlayer(id, name) {
+  if (window.confirm('Permanently remove ' + name + '?\nThis cannot be undone.')) {
+    removePlayer(id);
+  }
+}
+function confirmReassignTargets() {
+  if (window.confirm('Reshuffle all targets?\nEvery active player will be assigned a new random target.')) {
+    reassignTargets();
+  }
 }
 
 // ── RENDER ──

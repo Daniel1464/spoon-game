@@ -409,7 +409,7 @@ async function eliminatePlayer(id) {
   const victim = STATE.players.find(p => p.id === id);
   if (!victim || !victim.active) return;
   const killer = STATE.players.find(p => p.target_id === id && p.active);
-  const ops = [sb.from('players').update({ active: false }).eq('id', id)];
+  const ops = [sb.from('players').update({ active: false, target_id: null }).eq('id', id)];
   if (killer) {
     ops.push(sb.from('players').update({ kills: killer.kills + 1, target_id: victim.target_id }).eq('id', killer.id));
     ops.push(sb.from('eliminations').insert({ victim_id: id, victim_name: victim.name, killer_id: killer.id, killer_name: killer.name }));

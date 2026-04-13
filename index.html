@@ -530,7 +530,16 @@ async function removePlayer(id) {
   const killer = STATE.players.find(p => p.target_id === id);
   const ops = [sb.from('players').delete().eq('id', id)];
   if (killer) ops.push(sb.from('players').update({ target_id: victim.target_id }).eq('id', killer.id));
-  await Promise.all(ops);
+  const results = await Promise.all(ops);
+  const { error } = results[0];
+  if (error) {
+    if (error.code == '23503') {
+      showToast('Cannot remove player who has eliminated others or is already eliminated.');
+    } else {
+      showToast('Unknown error. Message: ' + error.message)
+    }
+    return;
+  }
   await loadAll();
   showToast('Player removed');
   render();

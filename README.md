@@ -57,7 +57,8 @@ create table players (
   target_id uuid references players(id),
   kills integer default 0,
   active boolean default true,
-  created_at timestamptz default now()
+  created_at timestamptz default now(),
+  encrypted_code text unique not null
 );
 
 create table forks (
@@ -74,9 +75,9 @@ create table game_state (
 
 create table eliminations (
   id uuid primary key default gen_random_uuid(),
-  victim_id uuid references players(id),
+  victim_id uuid references players(id) on delete cascade,
   victim_name text not null,
-  killer_id uuid references players(id),
+  killer_id uuid references players(id) on delete cascade,
   killer_name text not null,
   created_at timestamptz default now()
 );
@@ -153,6 +154,10 @@ with check (true);
 create policy "delete eliminations authed"
 on eliminations for delete
 to authenticated;
+
+-- Prevent accessing codes for anon users 
+revoke select on players from anon;
+grant select (id, name, email, target_id, kills, active, created_at, encrypted_code) on players to anon;
 ```
 
 **Setup RPC-based player elimination (for security purposes)**
@@ -210,6 +215,9 @@ grant execute on function eliminate_player(uuid) to anon;
 ```
 
 Then, go to "Authentication" and then "Users" in the left sidebar. Add 2 users: the first with the email "admin@dummyemail.org", and the second with "forks@dummyemail.org". The password you give to each will be the admin/forks passwords, respectively.
+
+Note: Because of these security policies, doing .select('*') on the players table is now impossible.
+This is to prevent a hacker from getting access to player codes by reading from the players table.
 
 ### 2. Deploy to GitHub Pages
 

@@ -342,6 +342,12 @@ let STATE = {
   eliminations: [],
 };
 
+// ── CRYPTO: hash player codes in the browser using SubtleCrypto ──
+async function sha256hex(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
 // ── HELPERS ──
 function genCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -405,7 +411,7 @@ function confirmEliminatePlayer(id, name) {
 }
 async function eliminatePlayer(id) {
   await sb.rpc('eliminate_player', { victim_id: id })
-  await loadAll();
+  if (STATE.loginMode !== 'player') await loadAll();
   await loadEliminations();
   showToast('Player eliminated');
   if (STATE.loginMode === 'player') {
@@ -415,8 +421,13 @@ async function eliminatePlayer(id) {
 }
 
 async function submitKillCode(code) {
-  const trimmed = code.trim().toUpperCase();
-  const { data: victim } = await sb.from('players').select('*').eq('code', trimmed).eq('active', true).single();
+  const encryptedCode = await sha256hex(code.trim().toUpperCase());
+  const { data: victim } = await sb
+    .from('players')
+    .select('id, encrypted_code')
+    .eq('encrypted_code', encryptedCode)
+    .eq('active', true)
+    .single();
   if (!victim) { showToast('Invalid or already used code'); return; }
   const killer = STATE.currentPlayer;
   if (killer.id === victim.id) { showToast("That's your own code!"); return; }
@@ -475,7 +486,9 @@ async function addPlayer() {
   if (STATE.players.find(p => p.email && p.email.toLowerCase() === email)) {
     showToast('A player with that email already exists'); return;
   }
-  await sb.from('players').insert({ name, email, code: genCode(), kills: 0, active: true });
+  const code = genCode();
+  const encrypted_code = await sha256hex(code);
+  await sb.from('players').insert({ name, email, code, encrypted_code, kills: 0, active: true });
   STATE.adminNewName  = '';
   STATE.adminNewEmail = '';
   await loadAll();
@@ -514,7 +527,13 @@ async function resetCode(id) {
   console.log('resetCode called with id:', id);
   const newCode = genCode();
   console.log('Generated new code:', newCode);
-  const { data, error } = await sb.from('players').update({ code: newCode }).eq('id', id);
+  const { data, error } = await sb
+    .from('players')
+    .update({ 
+      code: newCode,
+      encrypted_code: await sha256hex(newCode) 
+    })
+    .eq('id', id);
   console.log('Supabase response:', data, error);
   if (error) { showToast('Error: ' + error.message); return; }
   await loadAll();
@@ -565,10 +584,11 @@ function handlePasswordSubmit() {
 async function handlePlayerLogin() {
   const btn = document.getElementById('login-btn');
   if (btn) btn.disabled = true;
+  const encryptedCode = await sha256hex(STATE.loginCode.trim().toUpperCase());
   const { data, error } = await sb
     .from('players')
-    .select('id, name, code, target_id, kills, active')
-    .eq('code', STATE.loginCode.trim().toUpperCase())
+    .select('id, name, encrypted_code, target_id, kills, active')
+    .eq('encrypted_code', encryptedCode)
     .single();
   if (error || !data) {
     showLoginError('Code not found. Check with your admin.');
@@ -995,7 +1015,7 @@ function renderPlayer() {
         `}
         <div class="card">
           <div class="card-label">Your elimination code — give this to whoever eliminates you</div>
-          <div class="code-display">${p.code}</div>
+          <div class="code-display">${STATE.loginCode.trim().toUpperCase()}</div>
         </div>
         <div class="card">
           <div class="card-label">Enter your target's elimination code</div>
@@ -1017,7 +1037,7 @@ function renderPlayer() {
 
 async function refreshPlayerView() {
   const [{ data: p }, { data: gs }, { data: players }] = await Promise.all([
-    sb.from('players').select('id, name, code, target_id, kills, active').eq('id', STATE.currentPlayer.id).single(),
+    sb.from('players').select('id, name, encrypted_code, target_id, kills, active').eq('id', STATE.currentPlayer.id).single(),
     sb.from('game_state').select('status').eq('id',1).single(),
     sb.from('players').select('id, name, active').order('name'),
   ]);

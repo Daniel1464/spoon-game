@@ -341,6 +341,21 @@ let STATE = {
   eliminations: [],
 };
 
+// ── ADMIN EDGE FUNCTION CALLER ──
+const EDGE_FN_URL = 'https://hjlonriesoousgwsdysj.supabase.co/functions/v1/admin-action';
+
+async function adminCall(action, payload) {
+  const passwordHash = await sha256hex(STATE.loginPassword);
+  const res = await fetch(EDGE_FN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+    body: JSON.stringify({ action, payload, passwordHash })
+  });
+  const data = await res.json();
+  if (!res.ok || data.error) throw new Error(data.error || 'Admin action failed');
+  return data;
+}
+
 // ── CRYPTO: hash password in the browser using SubtleCrypto ──
 async function sha256hex(str) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
@@ -401,10 +416,12 @@ async function loadPublic() {
 }
 
 async function setGameStatus(status) {
-  STATE.gameStatus = status;
-  await sb.from('game_state').update({ status }).eq('id', 1);
-  showToast('Status updated');
-  render();
+  try {
+    await adminCall('setGameStatus', { status });
+    STATE.gameStatus = status;
+    showToast('Status updated');
+    render();
+  } catch(e) { showToast('Error: ' + e.message); }
 }
 
 function confirmEliminatePlayer(id, name) {
@@ -416,22 +433,13 @@ function confirmEliminatePlayer(id, name) {
   );
 }
 async function eliminatePlayer(id) {
-  const victim = STATE.players.find(p => p.id === id);
-  if (!victim || !victim.active) return;
-  const killer = STATE.players.find(p => p.target_id === id && p.active);
-  const ops = [sb.from('players').update({ active: false, target_id: null }).eq('id', id)];
-  if (killer) {
-    ops.push(sb.from('players').update({ kills: killer.kills + 1, target_id: victim.target_id }).eq('id', killer.id));
-    ops.push(sb.from('eliminations').insert({ victim_name: victim.name, killer_name: killer.name }));
-  }
-  await Promise.all(ops);
-  await loadAll();
-  await loadEliminations();
-  if (STATE.currentPlayer?.id === killer?.id) {
-    STATE.currentPlayer = STATE.players.find(p => p.id === killer.id);
-  }
-  showToast('Player eliminated');
-  render();
+  try {
+    await adminCall('eliminatePlayer', { id });
+    await loadAll();
+    await loadEliminations();
+    showToast('Player eliminated');
+    render();
+  } catch(e) { showToast('Error: ' + e.message); }
 }
 
 async function submitKillCode(code) {
@@ -459,11 +467,12 @@ async function submitKillCode(code) {
 }
 
 async function assignTarget(playerId, targetId) {
-  if (!targetId) return;
-  await sb.from('players').update({ target_id: targetId }).eq('id', playerId);
-  await loadAll();
-  showToast('Target assigned');
-  render();
+  try {
+    await adminCall('assignTarget', { playerId, targetId: targetId || null });
+    await loadAll();
+    showToast('Target assigned');
+    render();
+  } catch(e) { showToast('Error: ' + e.message); }
 }
 
 function confirmReassignTargets() {
@@ -478,12 +487,16 @@ async function reassignTargets() {
   const active = activePlayers();
   if (active.length < 2) { showToast('Need at least 2 active players'); return; }
   const shuffled = [...active].sort(() => Math.random() - 0.5);
-  await Promise.all(shuffled.map((p, i) =>
-    sb.from('players').update({ target_id: shuffled[(i + 1) % shuffled.length].id }).eq('id', p.id)
-  ));
-  await loadAll();
-  showToast('Targets reshuffled!');
-  render();
+  const assignments = shuffled.map((p, i) => ({
+    id: p.id,
+    target_id: shuffled[(i + 1) % shuffled.length].id
+  }));
+  try {
+    await adminCall('reassignTargets', { assignments });
+    await loadAll();
+    showToast('Targets reshuffled!');
+    render();
+  } catch(e) { showToast('Error: ' + e.message); }
 }
 
 async function addPlayer() {
@@ -495,12 +508,14 @@ async function addPlayer() {
   if (STATE.players.find(p => p.email && p.email.toLowerCase() === email)) {
     showToast('A player with that email already exists'); return;
   }
-  await sb.from('players').insert({ name, email, code: genCode(), kills: 0, active: true });
-  STATE.adminNewName  = '';
-  STATE.adminNewEmail = '';
-  await loadAll();
-  showToast('Player added');
-  render();
+  try {
+    await adminCall('addPlayer', { name, email, code: genCode() });
+    STATE.adminNewName  = '';
+    STATE.adminNewEmail = '';
+    await loadAll();
+    showToast('Player added');
+    render();
+  } catch(e) { showToast('Error: ' + e.message); }
 }
 
 function confirmRemovePlayer(id, name) {
@@ -512,14 +527,12 @@ function confirmRemovePlayer(id, name) {
   );
 }
 async function removePlayer(id) {
-  const victim = STATE.players.find(p => p.id === id);
-  const killer = STATE.players.find(p => p.target_id === id);
-  const ops = [sb.from('players').delete().eq('id', id)];
-  if (killer) ops.push(sb.from('players').update({ target_id: victim.target_id }).eq('id', killer.id));
-  await Promise.all(ops);
-  await loadAll();
-  showToast('Player removed');
-  render();
+  try {
+    await adminCall('removePlayer', { id });
+    await loadAll();
+    showToast('Player removed');
+    render();
+  } catch(e) { showToast('Error: ' + e.message); }
 }
 
 function confirmResetCode(id, name) {
@@ -531,15 +544,13 @@ function confirmResetCode(id, name) {
   );
 }
 async function resetCode(id) {
-  console.log('resetCode called with id:', id);
-  const newCode = genCode();
-  console.log('Generated new code:', newCode);
-  const { data, error } = await sb.from('players').update({ code: newCode }).eq('id', id);
-  console.log('Supabase response:', data, error);
-  if (error) { showToast('Error: ' + error.message); return; }
-  await loadAll();
-  showToast('Code reset to ' + newCode);
-  render();
+  try {
+    const newCode = genCode();
+    await adminCall('resetCode', { id, code: newCode });
+    await loadAll();
+    showToast('Code reset');
+    render();
+  } catch(e) { showToast('Error: ' + e.message); }
 }
 
 function confirmRestorePlayer(id, name) {
@@ -551,27 +562,33 @@ function confirmRestorePlayer(id, name) {
   );
 }
 async function restorePlayer(id) {
-  await sb.from('players').update({ active: true }).eq('id', id);
-  await loadAll();
-  showToast('Player restored');
-  render();
+  try {
+    await adminCall('restorePlayer', { id });
+    await loadAll();
+    showToast('Player restored');
+    render();
+  } catch(e) { showToast('Error: ' + e.message); }
 }
 
 async function addFork() {
   const name = STATE.forkInputName.trim();
   if (!name) return;
-  await sb.from('forks').insert({ name });
-  STATE.forkInputName = '';
-  await loadAll();
-  showToast('Fork added');
-  render();
+  try {
+    await adminCall('addFork', { name });
+    STATE.forkInputName = '';
+    await loadAll();
+    showToast('Fork added');
+    render();
+  } catch(e) { showToast('Error: ' + e.message); }
 }
 
 async function removeFork(id) {
-  await sb.from('forks').delete().eq('id', id);
-  await loadAll();
-  showToast('Fork removed');
-  render();
+  try {
+    await adminCall('removeFork', { id });
+    await loadAll();
+    showToast('Fork removed');
+    render();
+  } catch(e) { showToast('Error: ' + e.message); }
 }
 
 // ── AUTH ──
@@ -850,11 +867,12 @@ function parseAndImportCSV(text) {
 
 async function importPlayers(players) {
   showToast('Importing ' + players.length + ' players...');
-  const { error } = await sb.from('players').insert(players);
-  if (error) { showToast('Import error: ' + error.message); return; }
-  await loadAll();
-  showToast('Imported ' + players.length + ' players successfully');
-  render();
+  try {
+    await adminCall('importPlayers', { players });
+    await loadAll();
+    showToast('Imported ' + players.length + ' players successfully');
+    render();
+  } catch(e) { showToast('Import error: ' + e.message); }
 }
 
 // ── RENDER ──

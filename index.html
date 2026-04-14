@@ -293,6 +293,16 @@
   .rule-num { font-weight: 600; color: var(--ca-dark); flex-shrink: 0; font-size: 12px; margin-top: 2px; }
   .board-tagline { font-size: 13px; color: var(--muted); font-style: italic; margin-bottom: 14px; line-height: 1.6; }
   .sggb-badge { display: inline-block; background: var(--ca-yellow); color: var(--ca-dark); font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; letter-spacing: 0.04em; }
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; text-align: center; }
+  .stat-card-value { font-size: 28px; font-weight: 500; color: var(--ca-dark); line-height: 1; margin-bottom: 4px; }
+  .stat-card-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .stat-card.highlight { background: var(--ca-dark); border-color: var(--ca-dark); }
+  .stat-card.highlight .stat-card-value { color: var(--ca-yellow); }
+  .stat-card.highlight .stat-card-label { color: rgba(255,255,255,0.6); }
+  .stat-card.yellow { background: var(--ca-yellow); border-color: var(--ca-yellow); }
+  .stat-card.yellow .stat-card-value { color: var(--ca-dark); }
+  .stat-card.yellow .stat-card-label { color: rgba(0,0,0,0.5); }
 
 
   @media print {
@@ -347,22 +357,12 @@ function showToast(msg) {
 }
 
 function activePlayers() { return STATE.players.filter(p => p.active); }
-
 function pct() {
   if (!STATE.players.length) return 0;
   return Math.round((activePlayers().length / STATE.players.length) * 100);
 }
-
 function getTarget(player) {
   return STATE.players.find(p => p.id === player.target_id) || null;
-}
-
-async function fetchPlayerDataByCode(code) {
-  return await sb
-    .from('players')
-    .select('id, name, code, target_id, kills, active')
-    .eq('code', STATE.loginCode.trim().toUpperCase())
-    .single();
 }
 
 // ── DATA ──
@@ -475,21 +475,7 @@ async function addPlayer() {
   if (STATE.players.find(p => p.email && p.email.toLowerCase() === email)) {
     showToast('A player with that email already exists'); return;
   }
-  let code = genCode();
-  // look for players with this newly generated code
-  // to avoid ID collisions. Capped at 10 retries.
-  for (let i = 0; i < 10; i++) {
-    const { data, error } = await fetchPlayerDataByCode(code);
-    if (error || !data) {
-      break;
-    }
-    code = genCode();
-    if (i == 9) {
-      showToast("Failed to add player; ID collision occured over 9 times. Please let Mr. Pugsley know about this.");
-      return;
-    }
-  }
-  await sb.from('players').insert({ name, email, code, kills: 0, active: true });
+  await sb.from('players').insert({ name, email, code: genCode(), kills: 0, active: true });
   STATE.adminNewName  = '';
   STATE.adminNewEmail = '';
   await loadAll();
@@ -579,7 +565,11 @@ function handlePasswordSubmit() {
 async function handlePlayerLogin() {
   const btn = document.getElementById('login-btn');
   if (btn) btn.disabled = true;
-  const { data, error } = await fetchPlayerDataByCode(STATE.loginCode.trim().toUpperCase())
+  const { data, error } = await sb
+    .from('players')
+    .select('id, name, code, target_id, kills, active')
+    .eq('code', STATE.loginCode.trim().toUpperCase())
+    .single();
   if (error || !data) {
     showLoginError('Code not found. Check with your admin.');
     if (btn) btn.disabled = false;
@@ -648,15 +638,63 @@ async function loadEliminations() {
   STATE.eliminations = data || [];
 }
 
-function renderPublicBoard() {
+function publicStats() {
+  const total    = STATE.players.length;
+  const active   = STATE.players.filter(p => p.active).length;
+  const elim     = total - active;
+  const pctLeft  = total === 0 ? 0 : Math.round((active / total) * 100);
+  const gameStart = new Date('2026-04-16T12:00:00');
+  const now = new Date();
+  const daysSince = now < gameStart ? 0 : Math.max(0, Math.floor((now - gameStart) / (1000 * 60 * 60 * 24)));
+  const topKiller = [...STATE.players].sort((a,b) => b.kills - a.kills)[0];
+  const topStr = topKiller && topKiller.kills > 0
+    ? topKiller.name.split(' ')[0] + ' (' + topKiller.kills + ')'
+    : '—';
+  return { total, active, elim, pctLeft, daysSince, topStr };
+}
+
+function renderPublicHeader() {
+  const { total, active, elim, pctLeft, daysSince, topStr } = publicStats();
   return `
-    <div class="public-board">
+    <div class="public-board" style="padding-bottom:0;">
       <div style="text-align:center;margin-bottom:18px;">
         <div style="font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);margin-bottom:4px;">Presented by the</div>
         <span class="sggb-badge">Spoon Game Governing Body</span>
         <div style="font-size:22px;font-weight:500;color:var(--ca-dark);margin:8px 0 4px;">Senior Spoon Game 2025</div>
         <div class="board-tagline">"A game only for the well-mannered and polite.<br>No tomfoolery. No hoodwinkery. Absolutely no shenanigans."</div>
       </div>
+      <div class="stats-grid">
+        <div class="stat-card highlight">
+          <div class="stat-card-value">${pctLeft}%</div>
+          <div class="stat-card-label">Players remaining</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-value">${total}</div>
+          <div class="stat-card-label">Total players</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-value">${active}</div>
+          <div class="stat-card-label">Still in game</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-value">${elim}</div>
+          <div class="stat-card-label">Eliminated</div>
+        </div>
+        <div class="stat-card yellow">
+          <div class="stat-card-value" style="font-size:18px;">${topStr}</div>
+          <div class="stat-card-label">Most eliminations</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-value">${daysSince}</div>
+          <div class="stat-card-label">Day${daysSince !== 1 ? 's' : ''} of game</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderPublicFooter() {
+  return `
+    <div class="public-board">
       <div class="board-grid">
         <div class="card">
           <div class="card-label">Eliminations log</div>
@@ -840,7 +878,7 @@ function renderLoading() {
 
 function renderLogin() {
   return `
-    ${renderPublicBoard()}
+    ${renderPublicHeader()}
     <div class="login-wrap"><div class="login-card">
       <div <div style="display:flex;justify-content:center;margin-bottom:6px;">
           <svg width="48" height="120" viewBox="0 0 54 130" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -894,7 +932,8 @@ function renderLogin() {
         </button>
       `}
       <div class="login-error" id="login-err"></div>
-    </div></div>`;
+    </div></div>
+    ${renderPublicFooter()}`;
 }
 
 function renderPlayer() {

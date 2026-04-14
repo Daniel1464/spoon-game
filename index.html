@@ -347,12 +347,15 @@ const EDGE_FN_URL = 'https://hjlonriesoousgwsdysj.supabase.co/functions/v1/admin
 
 async function adminCall(action, payload) {
   const passwordHash = STATE.adminPasswordHash;
+  console.log('Sending passwordHash:', passwordHash);
+  console.log('loginPassword at time of call:', STATE.loginPassword);
   const res = await fetch(EDGE_FN_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
     body: JSON.stringify({ action, payload, passwordHash })
   });
   const data = await res.json();
+  console.log('Edge function response:', JSON.stringify(data));
   if (!res.ok || data.error) throw new Error(data.error || 'Admin action failed');
   return data;
 }

@@ -415,13 +415,14 @@ async function loadAll() {
 
 async function loadPublic() {
   const [{ data: players }, { data: forks }, { data: gs }] = await Promise.all([
-    sb.from('public_players').select('id, name, active, kills').order('name'),
+    sb.from('public_players').select('id, name, active').order('name'),
     sb.from('forks').select('*').order('name'),
     sb.from('game_state').select('status, access_enabled').eq('id', 1).single(),
   ]);
   STATE.players    = players || [];
   STATE.forks      = forks  || [];
   STATE.gameStatus = gs?.status || 'single';
+  await loadEliminations();
 }
 
 async function setGameStatus(status) {
@@ -474,19 +475,27 @@ async function submitKillCode(code) {
   if (STATE.gameStatus !== 'open' && killer.target_id !== victim.id) {
     showToast('That is not your current target'); return;
   }
-  // Load only the fields needed to find the killer and reassign targets
-  // Use player_self view which is accessible to anon but restricted to safe columns
-  const { data: allPlayers } = await sb.from('player_self').select('id, target_id, kills, active').order('name');
-  if (allPlayers) {
-    STATE.players = STATE.players.map(p => {
-      const fresh = allPlayers.find(x => x.id === p.id);
-      return fresh ? { ...p, target_id: fresh.target_id, kills: fresh.kills, active: fresh.active } : p;
+  try {
+    // playerEliminate sets manual=false so it counts on the leaderboard
+    const result = await fetch('https://hjlonriesoousgwsdysj.supabase.co/functions/v1/admin-action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+      body: JSON.stringify({
+        action: 'playerEliminate',
+        payload: { victimId: victim.id, killerId: killer.id },
+        passwordHash: 'player'
+      })
     });
-  }
-  await eliminatePlayer(victim.id);
-  STATE.killCodeInput = '';
-  showToast('Target eliminated!');
-  render();
+    const data = await result.json();
+    if (!result.ok || data.error) { showToast('Error: ' + (data.error || 'Unknown error')); return; }
+    // Refresh current player data
+    const { data: updatedPlayer } = await sb.from('player_self').select('id, name, code, target_id, active').eq('id', killer.id).single();
+    if (updatedPlayer) STATE.currentPlayer = updatedPlayer;
+    await loadEliminations();
+    STATE.killCodeInput = '';
+    showToast('Target eliminated!');
+    render();
+  } catch(e) { showToast('Error: ' + e.message); }
 }
 
 async function assignTarget(playerId, targetId) {
@@ -627,7 +636,7 @@ async function handlePlayerLogin() {
   if (btn) btn.disabled = true;
   const { data, error } = await sb
     .from('player_self')
-    .select('id, name, code, target_id, kills, active')
+    .select('id, name, code, target_id, active')
     .eq('code', STATE.loginCode.trim().toUpperCase())
     .single();
   if (error || !data) {
@@ -707,11 +716,14 @@ function publicStats() {
   const gameStart = new Date('2026-04-16T12:00:00');
   const now = new Date();
   const daysSince = now < gameStart ? 0 : Math.max(0, Math.floor((now - gameStart) / (1000 * 60 * 60 * 24)));
-  const topKiller = [...STATE.players].sort((a,b) => b.kills - a.kills)[0];
-  const topStr = topKiller && topKiller.kills > 0
-    ? topKiller.name.split(' ')[0] + ' (' + topKiller.kills + ')'
-    : '—';
-  return { total, active, elim, pctLeft, daysSince, topStr };
+  // Compute kills from eliminations log (manual=false only)
+  const killCounts = {};
+  STATE.eliminations.filter(e => !e.manual).forEach(e => {
+    killCounts[e.killer_name] = (killCounts[e.killer_name] || 0) + 1;
+  });
+  const topName = Object.keys(killCounts).sort((a,b) => killCounts[b] - killCounts[a])[0];
+  const topStr = topName ? topName.split(' ')[0] + ' (' + killCounts[topName] + ')' : '—';
+  return { total, active, elim, pctLeft, daysSince, topStr, killCounts };
 }
 
 function renderPublicHeader() {
@@ -818,13 +830,17 @@ function confirmReassignTargets() {
 // ── CSV EXPORT ──
 function exportCSV() {
   const rows = [['Name', 'Email', 'Access Code', 'Status', 'Eliminations']];
+  const killCounts = {};
+  STATE.eliminations.filter(e => !e.manual).forEach(e => {
+    killCounts[e.killer_name] = (killCounts[e.killer_name] || 0) + 1;
+  });
   STATE.players.forEach(p => {
     rows.push([
       p.name,
       p.email || '',
       p.code,
       p.active ? 'Active' : 'Eliminated',
-      p.kills
+      killCounts[p.name] || 0
     ]);
   });
   const csv = rows.map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(',')).join('\n');
@@ -1079,7 +1095,7 @@ function renderPlayer() {
 
 async function refreshPlayerView() {
   const [{ data: p }, { data: gs }, { data: players }] = await Promise.all([
-    sb.from('player_self').select('id, name, code, target_id, kills, active').eq('id', STATE.currentPlayer.id).single(),
+    sb.from('player_self').select('id, name, code, target_id, active').eq('id', STATE.currentPlayer.id).single(),
     sb.from('game_state').select('status, access_enabled').eq('id',1).single(),
     sb.from('public_players').select('id, name, active').order('name'),
   ]);
@@ -1090,7 +1106,13 @@ async function refreshPlayerView() {
 }
 
 function renderAdmin() {
-  const topKiller = [...STATE.players].sort((a,b)=>b.kills-a.kills)[0];
+  const killCounts = {};
+  STATE.eliminations.filter(e => !e.manual).forEach(e => {
+    killCounts[e.killer_name] = (killCounts[e.killer_name] || 0) + 1;
+  });
+  const topKiller = STATE.players.length > 0
+    ? STATE.players.reduce((best, p) => (killCounts[p.name]||0) > (killCounts[best?.name]||0) ? p : best, STATE.players[0])
+    : null;
   const elim = STATE.players.filter(p=>!p.active);
   return `
     ${headerHTML('Admin Dashboard', `
@@ -1116,7 +1138,7 @@ function renderAdminPlayers(topKiller, elim) {
       <div class="metric"><div class="metric-label">Active players</div><div class="metric-value">${activePlayers().length}</div></div>
       <div class="metric"><div class="metric-label">Eliminated</div><div class="metric-value">${elim.length}</div></div>
       <div class="metric"><div class="metric-label">% remaining</div><div class="metric-value">${pct()}%</div></div>
-      <div class="metric"><div class="metric-label">Top eliminator</div><div class="metric-value sm">${topKiller ? topKiller.name.split(' ')[0] : '—'}</div></div>
+      <div class="metric"><div class="metric-label">Top eliminator</div><div class="metric-value sm">${topKiller && killCounts[topKiller.name] ? topKiller.name.split(' ')[0] + ' (' + killCounts[topKiller.name] + ')' : '—'}</div></div>
     </div>
     <div class="card" style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;">
       <div>
@@ -1159,7 +1181,7 @@ function renderAdminPlayers(topKiller, elim) {
             </select>
           </span>
           <span class="pc">${p.code}</span>
-          <span class="pk">${p.kills}</span>
+          <span class="pk">${killCounts[p.name] || 0}</span>
           <span class="ps"><span class="badge ${p.active?'active':'elim'}">${p.active?'active':'out'}</span></span>
           <span class="pa">
             <button class="btn sm" onclick="confirmResetCode('${p.id}', '${safeName}')">Reset code</button>

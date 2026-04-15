@@ -788,6 +788,25 @@ function confirmReassignTargets() {
   }
 }
 
+// ── EMAIL ──
+async function sendCodeEmail(playerId, playerName) {
+  if (!window.confirm('Send access code email to ' + playerName + '?')) return;
+  try {
+    await adminCall('sendCodeEmail', { playerId });
+    showToast('Email sent to ' + playerName);
+  } catch(e) { showToast('Email failed: ' + e.message); }
+}
+
+async function sendAllCodes() {
+  const withEmail = STATE.players.filter(p => p.email);
+  if (!window.confirm('Send access code emails to all ' + withEmail.length + ' players with email addresses?')) return;
+  showToast('Sending emails...');
+  try {
+    const result = await adminCall('sendAllCodes', {});
+    showToast('Sent ' + result.sent + ' emails' + (result.failed > 0 ? ', ' + result.failed + ' failed' : ''));
+  } catch(e) { showToast('Email failed: ' + e.message); }
+}
+
 // ── CSV EXPORT ──
 function exportCSV() {
   const rows = [['Name', 'Email', 'Access Code', 'Status', 'Eliminations']];
@@ -1127,6 +1146,7 @@ function renderAdminPlayers(topKiller, elim) {
           <span class="ps"><span class="badge ${p.active?'active':'elim'}">${p.active?'active':'out'}</span></span>
           <span class="pa">
             <button class="btn sm" onclick="confirmResetCode('${p.id}', '${safeName}')">Reset code</button>
+            ${p.email ? `<button class="btn sm" onclick="sendCodeEmail('${p.id}', '${safeName}')">Send email</button>` : ''}
             ${p.active
               ? `<button class="btn sm danger" onclick="confirmEliminatePlayer('${p.id}', '${safeName}')">Eliminate</button>`
               : `<button class="btn sm" onclick="confirmRestorePlayer('${p.id}', '${safeName}')">Restore</button>`}
@@ -1142,9 +1162,10 @@ function renderAdminPlayers(topKiller, elim) {
           oninput="STATE.adminNewEmail=this.value" onkeydown="if(event.key==='Enter')addPlayer()" style="flex:1.4;">
         <button class="btn primary" onclick="addPlayer()">Add player</button>
       </div>
-      <div style="display:flex;gap:8px;margin-top:10px;">
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
         <button class="btn" onclick="triggerImport()">Import CSV</button>
         <button class="btn" onclick="exportCSV()">Export CSV</button>
+        <button class="btn primary" onclick="sendAllCodes()">Send all codes by email</button>
         <div style="flex:1;font-size:12px;color:var(--muted);display:flex;align-items:center;">CSV must have Name and Email columns. Duplicates skipped by email.</div>
       </div>
     </div>`;

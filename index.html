@@ -468,8 +468,15 @@ async function eliminatePlayer(id) {
 
 async function submitKillCode(code) {
   const trimmed = code.trim().toUpperCase();
-  const { data: victim } = await sb.from('player_self').select('*').eq('code', trimmed).eq('active', true).single();
-  if (!victim) { showToast('Invalid or already used code'); return; }
+  // Look up victim by code through Edge Function so anon key never sees codes
+  const victimRes = await fetch('https://hjlonriesoousgwsdysj.supabase.co/functions/v1/admin-action', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+    body: JSON.stringify({ action: 'lookupCode', payload: { code: trimmed }, passwordHash: 'player' })
+  });
+  const victimData = await victimRes.json();
+  if (!victimRes.ok || victimData.error || !victimData.player) { showToast('Invalid or already used code'); return; }
+  const victim = victimData.player;
   const killer = STATE.currentPlayer;
   if (killer.id === victim.id) { showToast("That's your own code!"); return; }
   if (STATE.gameStatus !== 'open' && killer.target_id !== victim.id) {
@@ -489,8 +496,14 @@ async function submitKillCode(code) {
     const data = await result.json();
     if (!result.ok || data.error) { showToast('Error: ' + (data.error || 'Unknown error')); return; }
     // Refresh current player data
-    const { data: updatedPlayer } = await sb.from('player_self').select('id, name, code, target_id, active').eq('id', killer.id).single();
-    if (updatedPlayer) STATE.currentPlayer = updatedPlayer;
+    // Refresh current player via Edge Function
+    const refreshRes = await fetch('https://hjlonriesoousgwsdysj.supabase.co/functions/v1/admin-action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+      body: JSON.stringify({ action: 'playerLogin', payload: { id: killer.id }, passwordHash: 'player' })
+    });
+    const refreshData = await refreshRes.json();
+    if (!refreshData.error) STATE.currentPlayer = refreshData.player;
     await loadEliminations();
     STATE.killCodeInput = '';
     showToast('Target eliminated!');
@@ -634,28 +647,28 @@ function handlePasswordSubmit() {
 async function handlePlayerLogin() {
   const btn = document.getElementById('login-btn');
   if (btn) btn.disabled = true;
-  const { data, error } = await sb
-    .from('player_self')
-    .select('id, name, code, target_id, active')
-    .eq('code', STATE.loginCode.trim().toUpperCase())
-    .single();
-  if (error || !data) {
-    showLoginError('Code not found. Check with your admin.');
+  // Login goes through Edge Function so the anon key never sees codes
+  const res = await fetch('https://hjlonriesoousgwsdysj.supabase.co/functions/v1/admin-action', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+    body: JSON.stringify({
+      action: 'playerLogin',
+      payload: { code: STATE.loginCode.trim().toUpperCase() },
+      passwordHash: 'player'
+    })
+  });
+  const loginData = await res.json();
+  if (!res.ok || loginData.error) {
+    showLoginError(loginData.error || 'Code not found. Check with your admin.');
     if (btn) btn.disabled = false;
     return;
   }
-  const [{ data: gs }, { data: players }] = await Promise.all([
-    sb.from('game_state').select('status, access_enabled').eq('id',1).single(),
+  const [{ data: players }] = await Promise.all([
     sb.from('public_players').select('id, name, active').order('name'),
   ]);
-  if (!gs?.access_enabled) {
-    showLoginError('The Spoon Game has not started yet. Check back at noon on April 16th!');
-    if (btn) btn.disabled = false;
-    return;
-  }
-  STATE.currentPlayer = data;
-  STATE.gameStatus = gs?.status || 'single';
-  STATE.players = players || [];
+  STATE.currentPlayer = loginData.player;
+  STATE.gameStatus    = loginData.gameStatus;
+  STATE.players       = players || [];
   STATE.view = 'player';
   render();
 }
@@ -1094,14 +1107,21 @@ function renderPlayer() {
 }
 
 async function refreshPlayerView() {
-  const [{ data: p }, { data: gs }, { data: players }] = await Promise.all([
-    sb.from('player_self').select('id, name, code, target_id, active').eq('id', STATE.currentPlayer.id).single(),
-    sb.from('game_state').select('status, access_enabled').eq('id',1).single(),
-    sb.from('public_players').select('id, name, active').order('name'),
-  ]);
-  if (p)       STATE.currentPlayer = p;
-  if (gs)      STATE.gameStatus    = gs.status;
-  if (players) STATE.players       = players;
+  const res = await fetch('https://hjlonriesoousgwsdysj.supabase.co/functions/v1/admin-action', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+    body: JSON.stringify({
+      action: 'playerLogin',
+      payload: { id: STATE.currentPlayer.id },
+      passwordHash: 'player'
+    })
+  });
+  const data = await res.json();
+  if (!data.error) STATE.currentPlayer = data.player;
+  if (data.gameStatus) STATE.gameStatus = data.gameStatus;
+  const { data: players } = await sb.from('public_players').select('id, name, active').order('name');
+  if (players) STATE.players = players;
+  await loadEliminations();
   render();
 }
 

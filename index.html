@@ -1351,6 +1351,12 @@ function generateQRCodes() {
   render();
   await Promise.all([
     loadEliminations(),
+    sb.from('public_players').select('id, name, active').order('name').then(({ data }) => {
+      if (data) STATE.players = data;
+    }),
+    sb.from('game_state').select('status').eq('id', 1).single().then(({ data }) => {
+      if (data) STATE.gameStatus = data.status;
+    }),
     new Promise(r => setTimeout(r, 300)),
   ]);
   STATE.view = 'login';

@@ -333,6 +333,7 @@ let STATE = {
   players: [],
   forks: [],
   gameStatus: 'single',
+  accessEnabled: false,
   killCodeInput: '',
   adminTab: 'players',
   adminNewName: '',
@@ -397,9 +398,10 @@ function getTarget(player) {
 async function loadAll() {
   try {
     const data = await adminCall('loadAll', {});
-    STATE.players    = data.players    || [];
-    STATE.forks      = data.forks      || [];
-    STATE.gameStatus = data.gameStatus || 'single';
+    STATE.players       = data.players    || [];
+    STATE.forks         = data.forks      || [];
+    STATE.gameStatus    = data.gameStatus || 'single';
+    STATE.accessEnabled = data.accessEnabled ?? false;
   } catch(e) {
     console.error('loadAll failed:', e);
   }
@@ -409,7 +411,7 @@ async function loadPublic() {
   const [{ data: players }, { data: forks }, { data: gs }] = await Promise.all([
     sb.from('public_players').select('id, name, active, kills').order('name'),
     sb.from('forks').select('*').order('name'),
-    sb.from('game_state').select('status').eq('id', 1).single(),
+    sb.from('game_state').select('status, access_enabled').eq('id', 1).single(),
   ]);
   STATE.players    = players || [];
   STATE.forks      = forks  || [];
@@ -421,6 +423,20 @@ async function setGameStatus(status) {
     await adminCall('setGameStatus', { status });
     STATE.gameStatus = status;
     showToast('Status updated');
+    render();
+  } catch(e) { showToast('Error: ' + e.message); }
+}
+
+async function toggleAccess() {
+  const newVal = !STATE.accessEnabled;
+  const msg = newVal
+    ? 'Enable player access? Students will be able to log in immediately.'
+    : 'Disable player access? Students will not be able to log in until you re-enable it.';
+  if (!window.confirm(msg)) return;
+  try {
+    await adminCall('setAccess', { enabled: newVal });
+    STATE.accessEnabled = newVal;
+    showToast('Player access ' + (newVal ? 'enabled' : 'disabled'));
     render();
   } catch(e) { showToast('Error: ' + e.message); }
 }
@@ -613,11 +629,16 @@ async function handlePlayerLogin() {
     if (btn) btn.disabled = false;
     return;
   }
-  STATE.currentPlayer = data;
   const [{ data: gs }, { data: players }] = await Promise.all([
-    sb.from('game_state').select('status').eq('id',1).single(),
+    sb.from('game_state').select('status, access_enabled').eq('id',1).single(),
     sb.from('public_players').select('id, name, active').order('name'),
   ]);
+  if (!gs?.access_enabled) {
+    showLoginError('The Spoon Game has not started yet. Check back at noon on April 16th!');
+    if (btn) btn.disabled = false;
+    return;
+  }
+  STATE.currentPlayer = data;
   STATE.gameStatus = gs?.status || 'single';
   STATE.players = players || [];
   STATE.view = 'player';
@@ -1053,7 +1074,7 @@ function renderPlayer() {
 async function refreshPlayerView() {
   const [{ data: p }, { data: gs }, { data: players }] = await Promise.all([
     sb.from('player_self').select('id, name, code, target_id, kills, active').eq('id', STATE.currentPlayer.id).single(),
-    sb.from('game_state').select('status').eq('id',1).single(),
+    sb.from('game_state').select('status, access_enabled').eq('id',1).single(),
     sb.from('public_players').select('id, name, active').order('name'),
   ]);
   if (p)       STATE.currentPlayer = p;
@@ -1090,6 +1111,15 @@ function renderAdminPlayers(topKiller, elim) {
       <div class="metric"><div class="metric-label">Eliminated</div><div class="metric-value">${elim.length}</div></div>
       <div class="metric"><div class="metric-label">% remaining</div><div class="metric-value">${pct()}%</div></div>
       <div class="metric"><div class="metric-label">Top eliminator</div><div class="metric-value sm">${topKiller ? topKiller.name.split(' ')[0] : '—'}</div></div>
+    </div>
+    <div class="card" style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;">
+      <div>
+        <div style="font-size:15px;font-weight:500;color:var(--text);">Player access</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:2px;">${STATE.accessEnabled ? 'Students can currently log in' : 'Students cannot log in yet'}</div>
+      </div>
+      <button class="btn ${STATE.accessEnabled ? 'danger' : 'primary'}" onclick="toggleAccess()">
+        ${STATE.accessEnabled ? 'Disable access' : 'Enable access'}
+      </button>
     </div>
     <div class="card">
       <div class="card-label">Game status</div>

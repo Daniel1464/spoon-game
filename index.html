@@ -692,9 +692,15 @@ async function handlePlayerLogin() {
     })
   });
   const loginData = await res.json();
+  // Show access-disabled message before rate limiter intercepts it
+  if (res.status === 403 && loginData.error) {
+    showLoginError(loginData.error);
+    if (btn) btn.disabled = false;
+    return;
+  }
   const errorMsg = enforcePasswordRateLimit(res.ok && !loginData.error);
   if (errorMsg) {
-    showLoginError(errorMsg);
+    showLoginError(loginData.error || errorMsg);
     if (btn) btn.disabled = false;
     return;
   }

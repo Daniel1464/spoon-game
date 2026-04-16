@@ -1360,7 +1360,17 @@ function renderAdminPlayers(topKiller, elim, killCounts) {
 
 function renderReports() {
   const active   = STATE.players.filter(p => p.active);
-  const eliminated = STATE.players.filter(p => !p.active);
+  // Order eliminated players by elimination time using the eliminations log
+  const elimNames = [...STATE.eliminations]
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+    .map(e => e.victim_name);
+  const eliminatedMap = {};
+  STATE.players.filter(p => !p.active).forEach(p => { eliminatedMap[p.name] = p; });
+  // Build ordered list: first by elimination log order, then any not in log alphabetically
+  const eliminated = [
+    ...elimNames.filter(n => eliminatedMap[n]).map(n => eliminatedMap[n]),
+    ...STATE.players.filter(p => !p.active && !elimNames.includes(p.name))
+  ];
 
   const fromDate = STATE.reportDateFrom ? new Date(STATE.reportDateFrom + 'T00:00:00') : null;
   const toDate   = STATE.reportDateTo   ? new Date(STATE.reportDateTo   + 'T23:59:59') : null;
@@ -1438,7 +1448,7 @@ function renderReports() {
     + '</div>'
     + '<div class="card">'
     + '<div class="card-label">All eliminated players — ' + eliminated.length + ' total</div>'
-    + pTable([...eliminated].reverse())
+    + pTable(eliminated)
     + '</div>';
 }
 

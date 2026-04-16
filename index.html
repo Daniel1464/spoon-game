@@ -784,7 +784,7 @@ function renderPublicHeader() {
       <div style="text-align:center;margin-bottom:18px;">
         <div style="font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);margin-bottom:4px;">Presented by the</div>
         <span class="sggb-badge">Spoon Game Governing Body</span>
-        <div style="font-size:22px;font-weight:500;color:var(--ca-dark);margin:8px 0 4px;">Senior Spoon Game 2025</div>
+        <div style="font-size:22px;font-weight:500;color:var(--ca-dark);margin:8px 0 4px;">Senior Spoon Game 2026</div>
         <div class="board-tagline">"A game only for the well-mannered and polite.<br>No tomfoolery. No hoodwinkery. Absolutely no shenanigans."</div>
       </div>
       <div class="stats-grid">
@@ -1033,7 +1033,7 @@ function renderLogin() {
           </svg>
         </div>
         <div class="login-title">Spoon Game</div>
-      <div class="login-sub">Cary Academy · Class of 2025</div>
+      <div class="login-sub">Cary Academy · Class of 2026</div>
       <div class="mode-tabs">
         <div class="mode-tab ${STATE.loginMode==='player'?'active':''}" onclick="STATE.loginMode='player';render()">Player</div>
         <div class="mode-tab ${STATE.loginMode==='admin'?'active':''}"  onclick="STATE.loginMode='admin';render()">Admin</div>
@@ -1279,7 +1279,7 @@ function renderPrintCards() {
       ${STATE.players.map(p => `
         <div class="player-card">
           <div class="pc-header">
-            <div><div class="pc-school">Cary Academy</div><div class="pc-game">Spoon Game 2025</div></div>
+            <div><div class="pc-school">Cary Academy</div><div class="pc-game">Spoon Game 2026</div></div>
             <div class="pc-year">Senior Class</div>
           </div>
           <div class="pc-body">
@@ -1331,7 +1331,7 @@ function renderForks() {
   const active = STATE.players.filter(p => p.active);
   return `
     <div class="forks-wrap">
-      ${headerHTML('Fork View — Spoon Game 2025', signOutBtn())}
+      ${headerHTML('Fork View — Spoon Game 2026', signOutBtn())}
       <div class="forks-content">
         <div class="forks-stats">
           <div class="forks-stat"><div class="forks-stat-num">${active.length}</div><div class="forks-stat-label">Players still in</div></div>

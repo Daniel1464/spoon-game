@@ -344,6 +344,10 @@ let STATE = {
   killCodeInput: '',
   adminTab: 'players',
   adminNewName: '',
+  adminSortCol: 'name',
+  adminSortDir: 'asc',
+  reportDateFrom: '',
+  reportDateTo: '',
   adminNewEmail: '',
   forkInputName: '',
   adminPasswordHash: '',
@@ -891,6 +895,38 @@ function confirmReassignTargets() {
   }
 }
 
+// ── ADMIN TABLE SORT ──
+function sortBy(col) {
+  if (STATE.adminSortCol === col) {
+    STATE.adminSortDir = STATE.adminSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    STATE.adminSortCol = col;
+    STATE.adminSortDir = 'asc';
+  }
+  render();
+}
+
+function sortedPlayers(killCounts) {
+  const col = STATE.adminSortCol;
+  const dir = STATE.adminSortDir === 'asc' ? 1 : -1;
+  return [...STATE.players].sort((a, b) => {
+    let av, bv;
+    switch (col) {
+      case 'name':    av = a.name.toLowerCase();       bv = b.name.toLowerCase();       break;
+      case 'target':  av = (STATE.players.find(p=>p.id===a.target_id)?.name||'').toLowerCase();
+                      bv = (STATE.players.find(p=>p.id===b.target_id)?.name||'').toLowerCase(); break;
+      case 'code':    av = a.code;                     bv = b.code;                     break;
+      case 'elim':    av = killCounts[a.name]||0;      bv = killCounts[b.name]||0;      break;
+      case 'spoons':  av = a.spoons_remaining??3;      bv = b.spoons_remaining??3;      break;
+      case 'status':  av = a.active?1:0;               bv = b.active?1:0;               break;
+      default:        av = a.name.toLowerCase();       bv = b.name.toLowerCase();
+    }
+    if (av < bv) return -1 * dir;
+    if (av > bv) return  1 * dir;
+    return 0;
+  });
+}
+
 // ── SPOON TRACKING ──
 async function updateSpoons(playerId, spoonsRemaining) {
   try {
@@ -1001,6 +1037,13 @@ async function importPlayers(players) {
     showToast('Imported ' + players.length + ' players successfully');
     render();
   } catch(e) { showToast('Import error: ' + e.message); }
+}
+
+function sortArrow(col) {
+  if (STATE.adminSortCol !== col) return '<span style="color:var(--color-border-secondary);margin-left:3px;">⇅</span>';
+  return STATE.adminSortDir === 'asc'
+    ? '<span style="color:var(--ca-dark);margin-left:3px;">↑</span>'
+    : '<span style="color:var(--ca-dark);margin-left:3px;">↓</span>';
 }
 
 // ── RENDER ──
@@ -1208,7 +1251,7 @@ function renderAdmin() {
       <div style="display:flex;align-items:center;gap:10px;">
         <div class="admin-tabs">
           <button class="admin-tab ${STATE.adminTab==='players'?'active':''}"    onclick="STATE.adminTab='players';render()">Players</button>
-          <button class="admin-tab ${STATE.adminTab==='print'?'active':''}"      onclick="STATE.adminTab='print';render()">Print cards</button>
+          <button class="admin-tab ${STATE.adminTab==='reports'?'active':''}"     onclick="STATE.adminTab='reports';render()">Reports</button>
           <button class="admin-tab ${STATE.adminTab==='forksmgmt'?'active':''}"  onclick="STATE.adminTab='forksmgmt';render()">Forks</button>
         </div>
         ${signOutBtn()}
@@ -1216,7 +1259,7 @@ function renderAdmin() {
     `)}
     <div class="content">
       ${STATE.adminTab === 'players'   ? renderAdminPlayers(topKiller, elim, killCounts) : ''}
-      ${STATE.adminTab === 'print'     ? renderPrintCards()                   : ''}
+      ${STATE.adminTab === 'reports'   ? renderReports()                      : ''}
       ${STATE.adminTab === 'forksmgmt' ? renderForksAdmin()                   : ''}
     </div>`;
 }
@@ -1249,16 +1292,16 @@ function renderAdminPlayers(topKiller, elim, killCounts) {
     </div>
     <div class="card">
       <div class="card-label">Players</div>
-      <div class="col-header">
-        <span class="pn">Name</span>
-        <span style="flex:1.6;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;">Target</span>
-        <span class="pc">Code</span>
-        <span class="pk">Elim.</span>
-        <span style="flex:0.6;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;">Spoons</span>
-        <span class="ps">Status</span>
+      <div class="col-header" style="cursor:default;">
+        <span class="pn" style="cursor:pointer;" onclick="sortBy('name')">Name ${sortArrow('name')}</span>
+        <span style="flex:1.6;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;cursor:pointer;" onclick="sortBy('target')">Target ${sortArrow('target')}</span>
+        <span class="pc" style="cursor:pointer;" onclick="sortBy('code')">Code ${sortArrow('code')}</span>
+        <span class="pk" style="cursor:pointer;" onclick="sortBy('elim')">Elim. ${sortArrow('elim')}</span>
+        <span style="flex:0.6;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;cursor:pointer;" onclick="sortBy('spoons')">Spoons ${sortArrow('spoons')}</span>
+        <span class="ps" style="cursor:pointer;" onclick="sortBy('status')">Status ${sortArrow('status')}</span>
         <span class="pa">Actions</span>
       </div>
-      ${STATE.players.map(p => {
+      ${sortedPlayers(killCounts).map(p => {
         const target = STATE.players.find(x => x.id === p.target_id);
         const otherActive = STATE.players.filter(x => x.id !== p.id && x.active);
         const safeName = p.name.replace(/'/g, "\\'");
@@ -1315,37 +1358,88 @@ function renderAdminPlayers(topKiller, elim, killCounts) {
     </div>`;
 }
 
-function renderPrintCards() {
-  return `
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;" class="no-print">
-      <div>
-        <div style="font-size:16px;font-weight:500;">Player access cards</div>
-        <div style="font-size:13px;color:var(--muted);margin-top:2px;">Print and cut — one card per player. QR code links directly to this app.</div>
-      </div>
-      <button class="btn yellow" onclick="window.print()">Print all cards</button>
-    </div>
-    <div class="print-grid" id="print-grid">
-      ${STATE.players.map(p => `
-        <div class="player-card">
-          <div class="pc-header">
-            <div><div class="pc-school">Cary Academy</div><div class="pc-game">Spoon Game 2026</div></div>
-            <div class="pc-year">Senior Class</div>
-          </div>
-          <div class="pc-body">
-            <div class="pc-info">
-              <div class="pc-name">${p.name}</div>
-              <div class="pc-code-label">Access code</div>
-              <div class="pc-code">${p.code}</div>
-            </div>
-            <div class="pc-qr" id="qr-${p.id}"></div>
-          </div>
-          <div class="pc-footer">
-            <div class="pc-instructions">Scan the QR code or visit the game URL and enter your code. Keep this card safe — your code is your identity in the game.</div>
-          </div>
-        </div>
-      `).join('')}
-    </div>`;
+function renderReports() {
+  const active   = STATE.players.filter(p => p.active);
+  const eliminated = STATE.players.filter(p => !p.active);
+
+  const fromDate = STATE.reportDateFrom ? new Date(STATE.reportDateFrom + 'T00:00:00') : null;
+  const toDate   = STATE.reportDateTo   ? new Date(STATE.reportDateTo   + 'T23:59:59') : null;
+  const filteredElim = STATE.eliminations.filter(e => {
+    const d = new Date(e.created_at);
+    if (fromDate && d < fromDate) return false;
+    if (toDate   && d > toDate)   return false;
+    return true;
+  });
+
+  const pTable = (players) => {
+    if (!players.length) return '<div class="empty">No players in this category.</div>';
+    const cols = 3;
+    const rows = Math.ceil(players.length / cols);
+    let html = '<div style="display:grid;grid-template-columns:repeat(' + cols + ',1fr);gap:0;">';
+    for (let col = 0; col < cols; col++) {
+      html += '<div>';
+      html += '<div style="display:flex;gap:6px;padding:6px 10px;border-bottom:1px solid var(--border);font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;">'
+        + '<span style="width:28px;">#</span><span>Name</span></div>';
+      for (let row = 0; row < rows; row++) {
+        const idx = col * rows + row;
+        if (idx >= players.length) {
+          html += '<div style="padding:6px 10px;border-bottom:1px solid var(--border);"></div>';
+          continue;
+        }
+        const p = players[idx];
+        html += '<div style="display:flex;gap:6px;padding:6px 10px;border-bottom:1px solid var(--border);background:' + (row%2===0?'var(--color-background-secondary)':'var(--surface)') + '">'
+          + '<span style="width:28px;color:var(--muted);font-size:12px;">' + (idx+1) + '</span>'
+          + '<span style="font-weight:500;font-size:13px;">' + p.name + '</span>'
+          + '</div>';
+      }
+      html += '</div>';
+    }
+    html += '</div>';
+    return html;
+  };
+
+  const eTable = (elims) => {
+    if (!elims.length) return '<div class="empty">No eliminations in this range.</div>';
+    return '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
+      + '<thead><tr>'
+      + '<th style="text-align:left;padding:7px 10px;border-bottom:1px solid var(--border);font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;">Eliminated</th>'
+      + '<th style="text-align:left;padding:7px 10px;border-bottom:1px solid var(--border);font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;">Spooned by</th>'
+      + '<th style="text-align:left;padding:7px 10px;border-bottom:1px solid var(--border);font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;">Type</th>'
+      + '<th style="text-align:left;padding:7px 10px;border-bottom:1px solid var(--border);font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;">Date &amp; time</th>'
+      + '</tr></thead><tbody>'
+      + elims.map((e,i) =>
+          '<tr style="background:' + (i%2===0?'var(--color-background-secondary)':'var(--surface)') + '">'
+          + '<td style="padding:7px 10px;font-weight:500;color:var(--danger);">' + e.victim_name + '</td>'
+          + '<td style="padding:7px 10px;font-weight:500;color:var(--ca-dark);">' + e.killer_name + '</td>'
+          + '<td style="padding:7px 10px;"><span class="badge ' + (e.manual?'elim':'active') + '">' + (e.manual?'admin':'player') + '</span></td>'
+          + '<td style="padding:7px 10px;color:var(--muted);">' + new Date(e.created_at).toLocaleString() + '</td>'
+          + '</tr>'
+        ).join('')
+      + '</tbody></table>';
+  };
+
+  return '<div class="card">'
+    + '<div class="card-label">Active players — ' + active.length + ' still in game</div>'
+    + pTable(active)
+    + '</div>'
+    + '<div class="card">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px;">'
+    + '<div class="card-label" style="margin-bottom:0;">Eliminations by date range — ' + filteredElim.length + ' result' + (filteredElim.length!==1?'s':'') + '</div>'
+    + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
+    + '<label style="font-size:12px;color:var(--muted);">From</label>'
+    + '<input type="date" value="' + STATE.reportDateFrom + '" oninput="STATE.reportDateFrom=this.value;render()" style="font-size:12px;padding:5px 8px;">'
+    + '<label style="font-size:12px;color:var(--muted);">To</label>'
+    + '<input type="date" value="' + STATE.reportDateTo + '" oninput="STATE.reportDateTo=this.value;render()" style="font-size:12px;padding:5px 8px;">'
+    + '<button class="btn sm" onclick="STATE.reportDateFrom=\'\';STATE.reportDateTo=\'\';render()">Clear</button>'
+    + '</div></div>'
+    + eTable(filteredElim)
+    + '</div>'
+    + '<div class="card">'
+    + '<div class="card-label">All eliminated players — ' + eliminated.length + ' total</div>'
+    + pTable(eliminated)
+    + '</div>';
 }
+
 
 function renderForksAdmin() {
   return `
